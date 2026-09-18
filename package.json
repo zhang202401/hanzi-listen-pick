@@ -1,0 +1,18 @@
+{
+  "name": "hanzi-listen-pick",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "汉字幸存者 · 听音选字 —— 幼儿园识字版幸存者游戏：游戏朗读、孩子点字作答，全程不需要麦克风",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "phaser": "^3.88.2"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}

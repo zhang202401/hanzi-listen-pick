@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0a0e1a" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <title>汉字幸存者 · 听音选字</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #0a0e1a;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #game {
+      width: 100%;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <!-- 游戏包较大（约 400KB），慢网络时先显示加载提示，引擎就绪后由 main.js 移除 -->
+    <div id="loading-hint" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0e1a;color:#fbbf24;font-family:'PingFang SC','Microsoft YaHei',sans-serif;z-index:0">
+      <div style="font-size:34px;font-weight:700">汉字幸存者 · 听音选字</div>
+      <div id="boot-status" style="font-size:15px;color:#64748b;margin-top:10px;padding:0 20px;text-align:center">游戏加载中，请稍等几秒…</div>
+    </div>
+    <script>
+      // 加载看门狗：脚本失败/网络卡住时给出明确提示，不再无限"加载中"
+      (function () {
+        function bootFail(msg) {
+          var el = document.getElementById('boot-status');
+          if (el) el.textContent = msg;
+        }
+        window.addEventListener('error', function (e) {
+          if (!window.__game && e.message) bootFail('加载出错：' + String(e.message).slice(0, 60));
+        });
+        setTimeout(function () {
+          if (!window.__game) bootFail('加载较慢或失败：请检查网络后，下拉刷新重试（首次约 10~40 秒）');
+        }, 12000);
+      })();
+    </script>
+  </div>
+  <div id="overlay"></div>
+  <script type="module" src="/src/main.js"></script>
+  <style>
+    /* 识字/报告 DOM 浮层：幼儿园小朋友用大字大按钮 */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      background: rgba(4, 8, 18, 0.55);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: #e2e8f0;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+    .quiz-panel, .report-panel {
+      background: #0e1526;
+      border: 1px solid #fbbf2455;
+      border-radius: 20px;
+      padding: 18px 20px;
+      max-width: 560px;
+      width: 100%;
+      max-height: 92vh;
+      overflow-y: auto;
+      box-shadow: 0 0 40px rgba(251, 191, 36, 0.12);
+      animation: panel-pop 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+    }
+    @keyframes panel-pop {
+      from { transform: translateY(28px) scale(0.95); opacity: 0; }
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    @keyframes panel-shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-10px); }
+      40% { transform: translateX(9px); }
+      60% { transform: translateX(-6px); }
+      80% { transform: translateX(4px); }
+    }
+    .quiz-panel.shake { animation: panel-shake 0.32s ease; }
+    .quiz-tag { font-size: 15px; color: #fbbf24; margin-bottom: 12px; letter-spacing: 1px; text-align: center; }
+    .quiz-question { font-size: 22px; line-height: 1.7; margin-bottom: 14px; text-align: center; }
+    .quiz-sound {
+      display: block; margin: 0 auto 14px; min-width: 120px; min-height: 72px;
+      background: #16203a; border: 2px solid #fbbf24; border-radius: 18px;
+      color: #fbbf24; font-size: 34px; cursor: pointer; font-family: inherit;
+    }
+    .quiz-sound:active { transform: scale(0.96); }
+    .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .quiz-opt {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      background: #16203a; border: 2px solid #2a3a5e; border-radius: 18px;
+      padding: 14px 8px; min-height: 110px; box-sizing: border-box;
+      color: #e2e8f0; cursor: pointer; font-family: inherit; transition: transform 0.08s;
+    }
+    .quiz-opt:active { transform: scale(0.97); }
+    .quiz-opt .hanzi { font-size: 64px; font-weight: 700; line-height: 1.1; }
+    .quiz-opt .pinyin { font-size: 16px; color: #7dd3fc; }
+    .quiz-opt.opt-correct { border-color: #4ade80; background: #14301f; animation: glow-pulse 1s ease 2; }
+    .quiz-opt.opt-wrong { border-color: #ef4444; background: #331419; }
+    .quiz-opt:disabled { cursor: default; opacity: 0.9; }
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(74, 222, 128, 0); }
+      50% { box-shadow: 0 0 18px rgba(74, 222, 128, 0.55); }
+    }
+    .quiz-result { margin-top: 14px; text-align: center; }
+    .quiz-exp-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .quiz-exp-title.good { color: #4ade80; }
+    .quiz-exp-title.bad { color: #ef4444; }
+    .quiz-exp { font-size: 18px; line-height: 1.8; color: #c4d2e8; }
+    .quiz-exp b.hanzi-big { font-size: 34px; color: #fbbf24; }
+    .quiz-continue {
+      margin-top: 14px; width: 100%; min-height: 60px;
+      background: #22d3ee; border: none; border-radius: 14px;
+      color: #0a0e1a; font-size: 20px; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    /* 矮屏（横屏手机）：答题面板紧凑化，保证继续按钮在屏幕内 */
+    @media (max-height: 480px) {
+      .quiz-panel { padding: 8px 12px; }
+      .quiz-tag { font-size: 12px; margin-bottom: 5px; }
+      .quiz-sound { min-height: 44px; font-size: 22px; margin-bottom: 8px; }
+      .quiz-options { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .quiz-opt { min-height: 76px; padding: 6px 4px; }
+      .quiz-opt .hanzi { font-size: 42px; }
+      .quiz-opt .pinyin { font-size: 12px; }
+      .quiz-result { margin-top: 6px; }
+      .quiz-exp-title { font-size: 14px; margin-bottom: 4px; }
+      .quiz-exp { font-size: 13px; }
+      .quiz-continue { min-height: 40px; font-size: 15px; margin-top: 8px; }
+    }
+    /* 结算/设置/引导 */
+    .report-title { text-align: center; font-size: 24px; font-weight: 800; color: #fbbf24; margin-bottom: 14px; letter-spacing: 2px; }
+    .rp-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .rp-stat {
+      background: #16203a; border-radius: 10px; padding: 8px 12px;
+      display: flex; justify-content: space-between; font-size: 14px; color: #8ea2c0;
+    }
+    .rp-stat b { color: #e2e8f0; }
+    .rp-advice {
+      background: #16203a; border-left: 3px solid #fbbf24; border-radius: 8px;
+      padding: 10px 12px; font-size: 14px; line-height: 1.7; color: #e2d9b8; margin: 12px 0;
+    }
+    .rp-wrong-title { font-size: 15px; font-weight: 700; color: #ef4444aa; margin: 8px 0 6px; }
+    .rp-wrong { background: #1a1220; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 15px; line-height: 1.7; }
+    .rp-wrong b { font-size: 22px; color: #fbbf24; }
+    .rp-btns { display: flex; gap: 10px; margin-top: 14px; }
+    .rp-btn {
+      flex: 1; min-height: 52px; border-radius: 12px; font-size: 15px; cursor: pointer;
+      background: #16203a; border: 1px solid #2a3a5e; color: #e2e8f0; font-family: inherit;
+    }
+    .rp-btn.primary { background: #fbbf24; border: none; color: #0a0e1a; font-weight: 800; }
+    .set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; font-size: 15px; }
+    .set-row input[type="range"] { flex: 1; accent-color: #fbbf24; }
+    .tut-step { background: #16203a; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; font-size: 15px; line-height: 1.7; }
+    .tut-step b { color: #fbbf24; }
+    .tut-step span { display: block; color: #c4d2e8; font-size: 14px; }
+  </style>
+</body>
+</html>
