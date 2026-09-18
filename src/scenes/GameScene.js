@@ -223,9 +223,12 @@ export default class GameScene extends Phaser.Scene {
     this.lockonTarget = null;
   }
 
-  /** 等级 → 体型成长系数：每升 1 级 +1.8%，45 级封顶（开局 1.0 → 满成长 1.8 倍大） */
+  /**
+   * 等级 → 体型成长系数：每升 1 级 +2.8%，50 级封顶。
+   * 封顶 2.4 倍 = 40px 贴图 ×2.4 ≈ 96px，与 BOSS（96px 贴图）一样大。
+   */
   growthForLevel(level) {
-    return 1 + Math.min(Math.max(0, level - 1), 45) * 0.018;
+    return 1 + Math.min(Math.max(0, level - 1), 50) * 0.028;
   }
 
   /** 等级 → 进化档位：5 级一档，外观越来越炫酷 */
@@ -245,9 +248,13 @@ export default class GameScene extends Phaser.Scene {
    */
   refreshPlayerSize(animate) {
     const target = this.growthForLevel(this.playerState.level);
-    // 碰撞体同步缩放（贴图 40px，圆心居中：offset = 20 - r），封顶防难度失衡
-    const r = Math.min(PLAYER.RADIUS * target, 24);
-    this.player.body.setCircle(r, 20 - r, 20 - r);
+    // 碰撞体同步缩放（贴图 40px）。
+    // 视觉封顶 2.4 倍≈48px 半径，但碰撞体封顶 30px（仍小于 BOSS 的 44px）：
+    // 视觉上有 BOSS 那么大，受击判定偏小，孩子玩起来不至于太难。
+    // Arcade 物理体不随贴图缩放：偏移须按缩放后计算（20×体型 - r）才居中
+    const r = Math.min(PLAYER.RADIUS * target, 30);
+    const off = 20 * target - r;
+    this.player.body.setCircle(r, off, off);
 
     if (this._growProxy) this.tweens.killTweensOf(this._growProxy);
     if (animate) {
@@ -492,7 +499,9 @@ export default class GameScene extends Phaser.Scene {
     e.xpValue = type.xp;
     e.kind = kind || null;
     e.kb = new Phaser.Math.Vector2();
-    e.spin = Phaser.Math.FloatBetween(-80, 80);
+    // 拟形敌人不旋转：车/机/鸟朝移动方向，兔/龟/机甲保持直立；几何兵保留随机自转
+    const UPRIGHT = { car: 1, plane: 1, bird: 1, bunny: 1, turtle: 1, mecha: 1 };
+    e.spin = UPRIGHT[kind] ? 0 : Phaser.Math.FloatBetween(-80, 80);
     e.baseScale = 1;
     e.phase = Math.random() * Math.PI * 2;
     // R11 传送入场动画（缩放+淡入）
@@ -763,9 +772,11 @@ export default class GameScene extends Phaser.Scene {
   spawnBullet(x, y, angle, damage, speedScale = 1) {
     const b = this.bullets.get(x, y, 'bullet');
     if (!b) return;
+    const ws = this.weaponScale(); // 子弹随体型变大（碰撞体同步）
     b.setActive(true).setVisible(true).setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
-    b.setPosition(x, y);
-    b.body.setCircle(5, 2, 2);
+    b.setPosition(x, y).setScale(ws);
+    const br = 5 * ws;
+    b.body.setCircle(br, b.width / 2 - br, b.height / 2 - br);
     b.body.reset(x, y);
     b.setVelocity(Math.cos(angle) * WEAPON.bulletSpeed * speedScale, Math.sin(angle) * WEAPON.bulletSpeed * speedScale);
     b.rotation = angle; // R2 溅射方向需要弹道朝向
@@ -933,7 +944,11 @@ export default class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: wave, radius: rr, alpha: 0, duration: 320, ease: 'Cubic.Out', onComplete: () => wave.destroy() });
     }
 
-    const tintMap = { enemy1: COLORS.enemy1, enemy2: COLORS.enemy2, enemy3: COLORS.enemy3, enemy4: COLORS.enemy4, enemy5: 0xf472b6 };
+    const tintMap = {
+      enemy1: COLORS.enemy1, enemy2: COLORS.enemy2, enemy3: COLORS.enemy3, enemy4: COLORS.enemy4, enemy5: 0xf472b6,
+      enemy_car: 0x2dd4bf, enemy_mecha: 0xe879f9, enemy_plane: 0x818cf8,
+      enemy_bunny: 0xf9a8d4, enemy_bird: 0x7dd3fc, enemy_turtle: 0x84cc16,
+    };
     const burst = this.add.particles(enemy.x, enemy.y, 'particle', {
       quantity: enemy.isBoss ? 60 : Math.round((enemy.isElite ? 20 : 10) * PARTICLE_SCALE),
       speed: { min: 50, max: enemy.isBoss ? 340 : 190 },
@@ -1162,12 +1177,18 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  /** 武器随体型成长的缩放系数：1.0 → 2.4（与角色体型同步，子弹/刃片/射线全跟着变大） */
+  weaponScale() {
+    return this.playerBaseScale || 1;
+  }
+
   // ---------- R1-R4 多武器系统 ----------
   weaponTick(delta) {
     const ps = this.playerState;
+    const ws = this.weaponScale();
     const W = ps.weapons || {};
 
-    // 环刃：绕体旋转刃片，接触伤害（每敌人 0.4s 免疫）
+    // 环刃：绕体旋转刃片，接触伤害（每敌人 0.4s 免疫）；轨道半径与刃片随体型变大
     if (W.whirl) {
       const lvl = W.whirl;
       this.whirlAngle = (this.whirlAngle || 0) + delta * 0.005;
@@ -1178,12 +1199,12 @@ export default class GameScene extends Phaser.Scene {
         this.whirlSprites.push(s);
       }
       while (this.whirlSprites.length > count) this.whirlSprites.pop().destroy();
-      const R = 84;
+      const R = 84 + 48 * (ws - 1);
       this.whirlSprites.forEach((s, i) => {
         const a = this.whirlAngle + (Math.PI * 2 * i) / count;
         const wx = this.player.x + Math.cos(a) * R;
         const wy = this.player.y + Math.sin(a) * R;
-        s.setPosition(wx, wy).setRotation(a + Math.PI / 2);
+        s.setPosition(wx, wy).setRotation(a + Math.PI / 2).setScale(ws);
       });
       this.whirlHitTimer = (this.whirlHitTimer || 0) - delta;
       if (this.whirlHitTimer <= 0) {
@@ -1192,7 +1213,7 @@ export default class GameScene extends Phaser.Scene {
         this.enemies.children.iterate((e) => {
           if (!e || e.shielded) return;
           for (const s of this.whirlSprites) {
-            if (Phaser.Math.Distance.Between(s.x, s.y, e.x, e.y) < 26 + (e.radius || 12) * 0.4) {
+            if (Phaser.Math.Distance.Between(s.x, s.y, e.x, e.y) < 26 * ws + (e.radius || 12) * 0.4) {
               this.damageEnemy(e, dmg, false);
               break;
             }
@@ -1204,7 +1225,7 @@ export default class GameScene extends Phaser.Scene {
       this.whirlSprites = null;
     }
 
-    // 闪电链：命中最近敌人后跳跃
+    // 闪电链：命中最近敌人后跳跃；电弧变粗、跳跃距离随体型变远
     if (W.chain) {
       const lvl = W.chain;
       this.chainTimer -= delta;
@@ -1213,6 +1234,7 @@ export default class GameScene extends Phaser.Scene {
         let from = this.nearestEnemy(520);
         if (from) {
           const dmg = Math.round((10 + 5 * lvl) * ps.bonusDmg);
+          const jumpD = 170 + 60 * (ws - 1);
           const hitSet = new Set();
           let cur = from;
           const pts = [{ x: this.player.x, y: this.player.y }];
@@ -1221,7 +1243,7 @@ export default class GameScene extends Phaser.Scene {
             pts.push({ x: cur.x, y: cur.y });
             this.damageEnemy(cur, dmg, false);
             let next = null;
-            let nd = 170;
+            let nd = jumpD;
             this.enemies.children.iterate((e2) => {
               if (!e2 || hitSet.has(e2)) return;
               const d = Phaser.Math.Distance.Between(cur.x, cur.y, e2.x, e2.y);
@@ -1234,7 +1256,7 @@ export default class GameScene extends Phaser.Scene {
           }
           // 闪电绘线
           const line = this.add.graphics().setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
-          line.lineStyle(3, 0x7dd3fc, 0.95);
+          line.lineStyle(3 * ws, 0x7dd3fc, 0.95);
           line.beginPath();
           pts.forEach((p, i) => (i === 0 ? line.moveTo(p.x, p.y) : line.lineTo(p.x, p.y)));
           line.strokePath();
@@ -1243,7 +1265,7 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // 函数射线：贯穿直线
+    // 函数射线：贯穿直线；光束变粗变长、判定带变宽
     if (W.laser) {
       this.laserTimer = (this.laserTimer || 1200) - delta;
       if (this.laserTimer <= 0) {
@@ -1251,7 +1273,7 @@ export default class GameScene extends Phaser.Scene {
         const target = this.nearestEnemy(560);
         if (target) {
           const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
-          const len = 700;
+          const len = 700 + 260 * (ws - 1);
           const dmg = Math.round((12 + 6 * W.laser) * ps.bonusDmg);
           const dx = Math.cos(angle), dy = Math.sin(angle);
           this.enemies.children.iterate((e) => {
@@ -1259,10 +1281,10 @@ export default class GameScene extends Phaser.Scene {
             const px = e.x - this.player.x, py = e.y - this.player.y;
             const proj = px * dx + py * dy;
             const perp = Math.abs(px * dy - py * dx);
-            if (proj >= 0 && proj <= len && perp < 30) this.damageEnemy(e, dmg, false);
+            if (proj >= 0 && proj <= len && perp < 30 * ws) this.damageEnemy(e, dmg, false);
           });
           const line = this.add.graphics().setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
-          line.lineStyle(4, 0x38bdf8, 0.9);
+          line.lineStyle(4 * ws, 0x38bdf8, 0.9);
           line.beginPath();
           line.moveTo(this.player.x, this.player.y);
           line.lineTo(this.player.x + dx * len, this.player.y + dy * len);
@@ -1282,8 +1304,10 @@ export default class GameScene extends Phaser.Scene {
           const m = this.missiles.get(this.player.x, this.player.y, 'missile');
           if (!m) break;
           m.setActive(true).setVisible(true).setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
+          m.setScale(ws);
           m.body.reset(this.player.x, this.player.y);
-          m.body.setCircle(4, 4, 1);
+          const mr = 4 * ws;
+          m.body.setCircle(mr, m.width / 2 - mr, m.height / 2 - mr);
           const a = Math.random() * Math.PI * 2;
           m.setVelocity(Math.cos(a) * 200, Math.sin(a) * 200);
           m.target = null;
@@ -1305,13 +1329,13 @@ export default class GameScene extends Phaser.Scene {
           this.tweens.add({
             targets: p,
             x: target.x, y: target.y,
-            scale: { from: 1.3, to: 0.9 },
+            scale: { from: 1.3 * ws, to: 0.9 * ws },
             duration: 460,
             ease: 'Sine.In',
             onComplete: () => {
               p.destroy();
-              const ring = this.add.circle(target.x, target.y, 24, 0xe879f9, 0).setStrokeStyle(3, 0xe879f9, 0.9).setDepth(9);
-              this.tweens.add({ targets: ring, radius: 60, alpha: 0, duration: 300, onComplete: () => ring.destroy() });
+              const ring = this.add.circle(target.x, target.y, 24, 0xe879f9, 0).setStrokeStyle(3 * ws, 0xe879f9, 0.9).setDepth(9);
+              this.tweens.add({ targets: ring, radius: 60 * ws, alpha: 0, duration: 300, onComplete: () => ring.destroy() });
               const cnt = 4 + 2 * W.cluster;
               for (let i = 0; i < cnt; i++) {
                 this.spawnBullet(target.x, target.y, (Math.PI * 2 * i) / cnt, dmg, 0.75);
@@ -1353,8 +1377,10 @@ export default class GameScene extends Phaser.Scene {
         const bo = this.boomers.get(this.player.x, this.player.y, 'whirl');
         if (bo) {
           bo.setActive(true).setVisible(true).setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
+          bo.setScale(ws);
           bo.body.reset(this.player.x, this.player.y);
-          bo.body.setCircle(10, 5, 5);
+          const br = 10 * ws;
+          bo.body.setCircle(br, bo.width / 2 - br, bo.height / 2 - br);
           bo.setVelocity(Math.cos(a) * 300, Math.sin(a) * 300);
           bo.rotation = 0;
           bo.hitSet = new Set();
@@ -1366,15 +1392,15 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // 不等式减速场：脉冲减速圈
+    // 不等式减速场：脉冲减速圈；半径随体型扩大
     if (W.frost) {
       this.frostTimer = (this.frostTimer || 3800) - delta;
       if (this.frostTimer <= 0) {
         this.frostTimer = 5000;
-        const R = 220;
+        const R = 220 + 60 * (ws - 1);
         const slowPct = 30 + 10 * W.frost;
         const slow = 1 - slowPct / 100;
-        const ring = this.add.circle(this.player.x, this.player.y, 30, 0x93c5fd, 0).setStrokeStyle(3, 0x93c5fd, 0.9).setDepth(8);
+        const ring = this.add.circle(this.player.x, this.player.y, 30, 0x93c5fd, 0).setStrokeStyle(3 * ws, 0x93c5fd, 0.9).setDepth(8);
         this.tweens.add({ targets: ring, radius: R, alpha: 0, duration: 480, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
         this.enemies.children.iterate((e) => {
           if (!e) return;
@@ -1395,9 +1421,10 @@ export default class GameScene extends Phaser.Scene {
         if (this.mines.countActive(true) < 4 + W.mine) {
           const m = this.mines.get(this.player.x + Phaser.Math.Between(-30, 30), this.player.y + Phaser.Math.Between(-30, 30), 'grenade');
           if (m) {
-            m.setActive(true).setVisible(true).setDepth(2).setTint(0xf87171).setScale(0.9);
+            m.setActive(true).setVisible(true).setDepth(2).setTint(0xf87171).setScale(0.9 * ws);
             m.body.reset(m.x, m.y);
-            m.body.setCircle(10, 3, 3);
+            const mr = 10 * ws;
+            m.body.setCircle(mr, m.width / 2 - mr, m.height / 2 - mr);
             m.mdamage = Math.round((20 + 8 * W.mine) * ps.bonusDmg);
             m.armAt = this.time.now + 400;
           }
@@ -1417,19 +1444,19 @@ export default class GameScene extends Phaser.Scene {
           this.tweens.add({
             targets: g,
             x: target.x, y: target.y,
-            scale: { from: 1.3, to: 0.8 },
+            scale: { from: 1.3 * ws, to: 0.8 * ws },
             duration: 480,
             ease: 'Sine.In',
             onComplete: () => {
               g.destroy();
               const inner = Math.round((25 + 10 * lvl) * ps.bonusDmg);
-              const ring = this.add.circle(target.x, target.y, 30, 0xf59e0b, 0).setStrokeStyle(3, 0xf59e0b, 0.9).setDepth(9);
-              this.tweens.add({ targets: ring, radius: 140, alpha: 0, duration: 380, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
+              const ring = this.add.circle(target.x, target.y, 30, 0xf59e0b, 0).setStrokeStyle(3 * ws, 0xf59e0b, 0.9).setDepth(9);
+              this.tweens.add({ targets: ring, radius: 140 + 40 * (ws - 1), alpha: 0, duration: 380, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
               this.enemies.children.iterate((e) => {
                 if (!e || e.shielded) return;
                 const d = Phaser.Math.Distance.Between(e.x, e.y, target.x, target.y);
-                if (d < 80) this.damageEnemy(e, inner, false);
-                else if (d < 150) this.damageEnemy(e, Math.round(inner / 2), false);
+                if (d < 80 + 25 * (ws - 1)) this.damageEnemy(e, inner, false);
+                else if (d < 150 + 45 * (ws - 1)) this.damageEnemy(e, Math.round(inner / 2), false);
               });
             },
           });
@@ -1659,10 +1686,11 @@ export default class GameScene extends Phaser.Scene {
 
   fireNova(lvl) {
     const ps = this.playerState;
+    const ws = this.weaponScale();
     const range = ps.novaRange;
     const inner = range / 2;
     const innerDmg = Math.round((20 + 8 * lvl) * ps.bonusDmg);
-    const ring = this.add.circle(this.player.x, this.player.y, 24, 0x22d3ee, 0).setStrokeStyle(3, 0x22d3ee, 0.8).setDepth(8);
+    const ring = this.add.circle(this.player.x, this.player.y, 24, 0x22d3ee, 0).setStrokeStyle(3 * ws, 0x22d3ee, 0.8).setDepth(8);
     this.tweens.add({ targets: ring, radius: range, alpha: 0, duration: 460, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
     this.enemies.children.iterate((e) => {
       if (!e) return;
@@ -1827,7 +1855,7 @@ export default class GameScene extends Phaser.Scene {
       this._evoOrbs.forEach((orb, i) => {
         const a = this.time.now / 650 + (Math.PI * 2 * i) / this._evoOrbs.length;
         orb.setPosition(this.player.x + Math.cos(a) * 36 * this.playerBaseScale, this.player.y + Math.sin(a) * 36 * this.playerBaseScale);
-        orb.setScale(0.42 * Math.min(1.5, this.playerBaseScale));
+        orb.setScale(0.42 * Math.min(2.2, this.playerBaseScale));
       });
     }
 
@@ -1852,8 +1880,8 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
 
-      // R6 远程兵：保持距离 + 周期射击
-      if (e.kind === 'shooter') {
+      // R6 远程兵（含高达机甲）：保持距离 + 周期射击
+      if (e.kind === 'shooter' || e.kind === 'mecha') {
         e.shootTimer = (e.shootTimer || 1800) - delta;
         const desired = 300;
         let vx = 0, vy = 0;
@@ -1861,7 +1889,8 @@ export default class GameScene extends Phaser.Scene {
         else if (dist < desired - 70) { dir.normalize(); vx = -dir.x * e.speed; vy = -dir.y * e.speed; }
         e.kb.scale(0.86);
         e.setVelocity(vx + e.kb.x, vy + e.kb.y);
-        e.rotation += (e.spin * delta) / 1000;
+        if (e.spin) e.rotation += (e.spin * delta) / 1000;
+        else if (e.kind === 'mecha') e.setFlipX(this.player.x < e.x); // 机甲面向玩家
         if (e.shootTimer <= 0 && dist < 540) {
           e.shootTimer = 2300;
           const a = Phaser.Math.Angle.Between(e.x, e.y, this.player.x, this.player.y);
@@ -1873,8 +1902,8 @@ export default class GameScene extends Phaser.Scene {
       const slow = this.time.now < (e.slowUntil || 0) ? (e.slowMul || 0.5) : 1;
       dir.normalize().scale(e.speed * slow).add(e.kb);
 
-      // R13 冲锋怪：接近→前摇闪红→直线冲锋
-      if (e.kind === 'charger') {
+      // R13 冲锋怪（含小汽车）：接近→前摇闪红→直线冲锋
+      if (e.kind === 'charger' || e.kind === 'car') {
         e.ai = e.ai || { phase: 'seek', t: 0 };
         if (e.ai.phase === 'seek') {
           if (dist < 380) {
@@ -1886,6 +1915,11 @@ export default class GameScene extends Phaser.Scene {
         } else if (e.ai.phase === 'windup') {
           e.ai.t -= delta;
           e.setVelocity(0, 0);
+          // 汽车倒车蓄力（后退一点点再冲，更有"起步"感）
+          if (e.kind === 'car') {
+            e.ai.rev = (e.ai.rev || 0) - delta;
+            if (e.ai.rev <= 0) { e.ai.rev = 90; e.setVelocity(-e.ai.dir.x * 60, -e.ai.dir.y * 60); }
+          }
           if (e.ai.t <= 0) {
             e.ai.phase = 'charge';
             e.ai.t = 460;
@@ -1895,6 +1929,7 @@ export default class GameScene extends Phaser.Scene {
         } else if (e.ai.phase === 'charge') {
           e.ai.t -= delta;
           e.setVelocity(e.ai.dir.x * e.speed * 3.4, e.ai.dir.y * e.speed * 3.4);
+          if (e.kind === 'car') e.rotation = Math.atan2(e.ai.dir.y, e.ai.dir.x); // 车头对准冲锋方向
           if (e.ai.t <= 0) e.ai.phase = 'seek';
         }
         return;
@@ -1943,9 +1978,44 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
 
+      // 飞机：蛇形飞行（朝向玩家 + 垂直正弦摆动），机头对准速度方向
+      if (e.kind === 'flyer') {
+        const a = Math.atan2(dir.y, dir.x);
+        const wob = Math.sin(this.time.now / 240 + (e.phase || 0) * 7) * e.speed * 0.85;
+        e.kb.scale(0.86);
+        e.setVelocity(
+          Math.cos(a) * e.speed - Math.sin(a) * wob + e.kb.x,
+          Math.sin(a) * e.speed + Math.cos(a) * wob + e.kb.y
+        );
+        e.rotation = Math.atan2(e.body.velocity.y, e.body.velocity.x);
+        return;
+      }
+
+      // 小兔：跳-停节奏（跳得快、停得可爱），方向微抖动
+      if (e.kind === 'hopper') {
+        e.ai = e.ai || { t: 0, hopping: false };
+        e.ai.t -= delta;
+        if (e.ai.t <= 0) {
+          e.ai.hopping = !e.ai.hopping;
+          e.ai.t = e.ai.hopping ? 520 : 460;
+          if (e.ai.hopping) e.ai.jitter = Phaser.Math.FloatBetween(-0.6, 0.6);
+        }
+        e.kb.scale(0.86);
+        if (e.ai.hopping) {
+          const a = Phaser.Math.Angle.Between(e.x, e.y, this.player.x, this.player.y) + e.ai.jitter * Math.sin(this.time.now / 160);
+          e.setVelocity(Math.cos(a) * e.speed * 1.9 + e.kb.x, Math.sin(a) * e.speed * 1.9 + e.kb.y);
+          e.rotation = Math.sin(this.time.now / 70) * 0.16; // 蹦跳摇摆
+        } else {
+          e.setVelocity(e.kb.x, e.kb.y); // 蹲停喘气
+          e.rotation = 0;
+        }
+        return;
+      }
+
       e.kb.scale(0.86);
       e.setVelocity(dir.x, dir.y);
-      e.rotation += (e.spin * delta) / 1000;
+      if (e.spin) e.rotation += (e.spin * delta) / 1000;
+      else if (e.kind === 'bird') e.rotation = Math.atan2(e.body.velocity.y, e.body.velocity.x); // 小鸟朝飞行方向
       // R14 追踪浮动：朝向玩家的轻微脉动
       if (!e.isBoss) {
         const pulse = 1 + 0.06 * Math.sin(this.time.now / 240 + (e.phase || 0));

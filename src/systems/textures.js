@@ -29,6 +29,14 @@ export function buildPlaceholderTextures(scene) {
   polygon(scene, 'enemy9', 32, 5, 0x8b5cf6); // 五边 召唤师
   glowCircle(scene, 'ebullet', 12, 0xef4444); // 敌方弹幕
 
+  // 拟形敌人家族（霓虹剪影 + 白描边，与几何兵同风格）：
+  carTexture(scene, 'enemy_car', 56, 30, 0x2dd4bf);      // 小汽车 青绿（冲锋）
+  mechaTexture(scene, 'enemy_mecha', 52, 56, 0xe879f9);  // 机甲 紫红（远程射击）
+  planeTexture(scene, 'enemy_plane', 54, 42, 0x818cf8);  // 飞机 靛蓝（蛇形飞行）
+  bunnyTexture(scene, 'enemy_bunny', 40, 46, 0xf9a8d4);  // 小兔 粉（跳跃）
+  birdTexture(scene, 'enemy_bird', 38, 28, 0x7dd3fc);    // 小鸟 天蓝（快速）
+  turtleTexture(scene, 'enemy_turtle', 54, 36, 0x84cc16); // 小龟 草绿（慢速肉盾）
+
   // 掉落物：回复包 / 磁铁 / 宝箱
   capsuleTexture(scene, 'drop_heal', 22, 30, 0x4ade80);
   horseshoeTexture(scene, 'drop_magnet', 34, 0x22d3ee);
@@ -59,6 +67,119 @@ export function buildPlaceholderTextures(scene) {
   arrowTexture(scene, 'arrow', 90, 36);
 
   // 星空氛围粒子用 particle 即可
+}
+
+/** 小汽车（顶视，车头朝右）：可见四轮 + 描边车身 + 浅色座舱 + 车头灯 */
+function carTexture(scene, key, w, h, color) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(0x334155, 1); // 车轮（四角，深灰蓝可见）
+  g.fillRoundedRect(w * 0.13, 0, w * 0.22, h * 0.26, 2);
+  g.fillRoundedRect(w * 0.13, h * 0.74, w * 0.22, h * 0.26, 2);
+  g.fillRoundedRect(w * 0.58, 0, w * 0.22, h * 0.26, 2);
+  g.fillRoundedRect(w * 0.58, h * 0.74, w * 0.22, h * 0.26, 2);
+  g.fillStyle(color, 0.95); // 车身
+  g.fillRoundedRect(2, h * 0.12, w - 6, h * 0.76, h * 0.28);
+  g.lineStyle(2, 0xffffff, 0.6); // 白描边（与几何兵一致）
+  g.strokeRoundedRect(2, h * 0.12, w - 6, h * 0.76, h * 0.28);
+  g.fillStyle(0xe2e8f0, 0.9); // 座舱窗
+  g.fillRoundedRect(w * 0.34, h * 0.24, w * 0.28, h * 0.52, 3);
+  g.fillStyle(0xffffff, 0.95); // 车头灯
+  g.fillCircle(w - 9, h * 0.3, 2.6);
+  g.fillCircle(w - 9, h * 0.7, 2.6);
+  g.generateTexture(key, w, h);
+  g.destroy();
+}
+
+/** 机甲头部（正面）：V 字天线角 + 方形头 + 发光独眼横条 + 深色下颚 */
+function mechaTexture(scene, key, w, h, color) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(color, 0.9); // 天线角
+  g.fillTriangle(w * 0.08, h * 0.32, w * 0.3, h * 0.04, w * 0.36, h * 0.3);
+  g.fillTriangle(w * 0.92, h * 0.32, w * 0.7, h * 0.04, w * 0.64, h * 0.3);
+  g.fillStyle(color, 0.95); // 头部
+  g.fillRoundedRect(w * 0.16, h * 0.2, w * 0.68, h * 0.52, 6);
+  g.fillStyle(0x0b1222, 0.9); // 下颚
+  g.fillRoundedRect(w * 0.16, h * 0.68, w * 0.68, h * 0.16, 3);
+  g.fillStyle(0xffffff, 0.95); // 独眼横条
+  g.fillRoundedRect(w * 0.26, h * 0.38, w * 0.48, h * 0.13, 3);
+  g.generateTexture(key, w, h);
+  g.destroy();
+}
+
+/** 喷气飞机（机头朝右）：上下后掠翼 + 尾翼 + 尖机身 + 座舱光点 */
+function planeTexture(scene, key, w, h, color) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(color, 0.8); // 后掠翼
+  g.fillTriangle(w * 0.32, h * 0.5, w * 0.52, 0, w * 0.68, h * 0.5);
+  g.fillTriangle(w * 0.32, h * 0.5, w * 0.52, h, w * 0.68, h * 0.5);
+  g.fillTriangle(2, h * 0.18, w * 0.22, h * 0.5, 2, h * 0.82); // 尾翼
+  g.fillStyle(color, 0.97); // 机身
+  g.fillPoints([
+    { x: w - 2, y: h * 0.5 },
+    { x: w * 0.55, y: h * 0.33 },
+    { x: w * 0.18, y: h * 0.38 },
+    { x: w * 0.18, y: h * 0.62 },
+    { x: w * 0.55, y: h * 0.67 },
+  ], true);
+  g.fillStyle(0xffffff, 0.9); // 座舱
+  g.fillCircle(w * 0.74, h * 0.5, 2.6);
+  g.generateTexture(key, w, h);
+  g.destroy();
+}
+
+/** 小兔子（正面）：长耳朵（浅色内耳）+ 圆头 + 黑豆眼 */
+function bunnyTexture(scene, key, w, h, color) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(color, 0.95); // 耳朵
+  g.fillEllipse(w * 0.3, h * 0.26, w * 0.2, h * 0.5);
+  g.fillEllipse(w * 0.7, h * 0.26, w * 0.2, h * 0.5);
+  g.fillStyle(0xffffff, 0.7); // 内耳
+  g.fillEllipse(w * 0.3, h * 0.28, w * 0.09, h * 0.32);
+  g.fillEllipse(w * 0.7, h * 0.28, w * 0.09, h * 0.32);
+  g.fillStyle(color, 0.97); // 头
+  g.fillCircle(w / 2, h * 0.66, w * 0.34);
+  g.fillStyle(0x0b1222, 0.9); // 眼睛
+  g.fillCircle(w * 0.4, h * 0.6, 2);
+  g.fillCircle(w * 0.6, h * 0.6, 2);
+  g.fillStyle(0xffffff, 0.85); // 鼻子
+  g.fillCircle(w / 2, h * 0.72, 1.6);
+  g.generateTexture(key, w, h);
+  g.destroy();
+}
+
+/** 小鸟（朝右）：圆身 + 上扬翅膀 + 金色尖喙 + 尾羽 */
+function birdTexture(scene, key, w, h, color) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(color, 0.85); // 翅膀
+  g.fillTriangle(w * 0.26, h * 0.58, w * 0.6, 0, w * 0.64, h * 0.62);
+  g.fillStyle(color, 0.97); // 身体
+  g.fillEllipse(w * 0.48, h * 0.58, w * 0.6, h * 0.72);
+  g.fillStyle(0xfbbf24, 0.95); // 喙
+  g.fillTriangle(w * 0.74, h * 0.46, w * 0.98, h * 0.58, w * 0.74, h * 0.72);
+  g.fillStyle(0x0b1222, 0.9); // 眼睛
+  g.fillCircle(w * 0.64, h * 0.48, 1.8);
+  g.generateTexture(key, w, h);
+  g.destroy();
+}
+
+/** 小乌龟（顶视，头朝右）：草绿壳 + 深色壳纹 + 四脚 + 探出的头 */
+function turtleTexture(scene, key, w, h, color) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(color, 0.9); // 四脚
+  g.fillEllipse(w * 0.24, h * 0.14, w * 0.18, h * 0.28);
+  g.fillEllipse(w * 0.24, h * 0.86, w * 0.18, h * 0.28);
+  g.fillEllipse(w * 0.6, h * 0.88, w * 0.16, h * 0.24);
+  g.fillEllipse(w * 0.6, h * 0.12, w * 0.16, h * 0.24);
+  g.fillStyle(color, 0.95); // 头
+  g.fillEllipse(w * 0.86, h * 0.5, w * 0.2, h * 0.32);
+  g.fillStyle(color, 0.97); // 壳
+  g.fillEllipse(w * 0.46, h * 0.5, w * 0.62, h * 0.9);
+  g.fillStyle(0x0b1222, 0.4); // 壳纹
+  g.fillEllipse(w * 0.46, h * 0.5, w * 0.34, h * 0.5);
+  g.fillStyle(0xffffff, 0.6); // 眼
+  g.fillCircle(w * 0.92, h * 0.42, 1.4);
+  g.generateTexture(key, w, h);
+  g.destroy();
 }
 
 /** 半透明箭头：指向右（0 弧度），尾巴在左端 */

@@ -52,6 +52,13 @@ export const ENEMY = {
   charger: { key: 'enemy7', speed: 78, damage: 11, radius: 13, hp: 28, xp: 3 },
   bomber: { key: 'enemy8', speed: 95, damage: 15, radius: 13, hp: 16, xp: 3 },
   summoner: { key: 'enemy9', speed: 56, damage: 4, radius: 14, hp: 42, xp: 5 },
+  // —— 拟形家族（汽车/高达/飞机/动物）——
+  bird: { key: 'enemy_bird', speed: 150, damage: 5, radius: 11, hp: 12, xp: 1 },      // 小鸟：快而脆
+  bunny: { key: 'enemy_bunny', speed: 88, damage: 7, radius: 13, hp: 22, xp: 2 },     // 小兔：跳跳兵
+  plane: { key: 'enemy_plane', speed: 118, damage: 8, radius: 13, hp: 20, xp: 2 },    // 飞机：蛇形飞行
+  car: { key: 'enemy_car', speed: 82, damage: 11, radius: 15, hp: 30, xp: 3 },        // 汽车：冲锋
+  mecha: { key: 'enemy_mecha', speed: 48, damage: 6, radius: 16, hp: 55, xp: 4 },     // 高达：远程射击
+  turtle: { key: 'enemy_turtle', speed: 36, damage: 12, radius: 18, hp: 115, xp: 5 }, // 乌龟：慢速肉盾
 };
 
 // —— 敌方弹幕 ——

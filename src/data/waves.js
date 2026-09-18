@@ -4,12 +4,12 @@
  */
 export const WAVES = [
   { t: 0,    interval: 1600, cap: 7,  mix: { chaser: 1 } },
-  { t: 60,   interval: 1300, cap: 9,  mix: { chaser: 3, sprinter: 1 } },
-  { t: 150,  interval: 1150, cap: 12, mix: { chaser: 3, sprinter: 2, tank: 1 } },
-  { t: 260,  interval: 1100, cap: 13, mix: { chaser: 2, sprinter: 1, splitter: 1, shooter: 1 }, boss: 'dice' },
-  { t: 380,  interval: 950,  cap: 18, mix: { chaser: 2, sprinter: 2, tank: 1, splitter: 1, shooter: 1, charger: 1 } },
-  { t: 480,  interval: 900,  cap: 20, mix: { chaser: 2, sprinter: 2, tank: 1, splitter: 1, shooter: 1, charger: 1, bomber: 1 }, boss: 'stats' },
-  { t: 600,  interval: 820,  cap: 26, mix: { chaser: 3, sprinter: 2, tank: 2, splitter: 2, shooter: 2, summoner: 1 } },
+  { t: 60,   interval: 1300, cap: 9,  mix: { chaser: 3, sprinter: 1, bird: 1 } },
+  { t: 150,  interval: 1150, cap: 12, mix: { chaser: 3, sprinter: 2, tank: 1, bird: 1, turtle: 1 } },
+  { t: 260,  interval: 1100, cap: 13, mix: { chaser: 2, sprinter: 1, splitter: 1, shooter: 1, bunny: 1 }, boss: 'dice' },
+  { t: 380,  interval: 950,  cap: 18, mix: { chaser: 2, sprinter: 2, tank: 1, splitter: 1, shooter: 1, charger: 1, plane: 1, car: 1 } },
+  { t: 480,  interval: 900,  cap: 20, mix: { chaser: 2, sprinter: 2, tank: 1, splitter: 1, shooter: 1, charger: 1, bomber: 1, plane: 1, turtle: 1, bunny: 1 }, boss: 'stats' },
+  { t: 600,  interval: 820,  cap: 26, mix: { chaser: 3, sprinter: 2, tank: 2, splitter: 2, shooter: 2, summoner: 1, mecha: 1, car: 1, plane: 1, bird: 1 } },
   { t: 840,  boss: 'sine' },
   { t: 1020, boss: 'dice' },
   { t: 1200, boss: 'stats' },
