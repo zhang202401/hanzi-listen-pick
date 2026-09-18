@@ -124,6 +124,19 @@ export default class GameScene extends Phaser.Scene {
     const { width, height } = this.scale.gameSize;
     this.grid = this.add.tileSprite(0, 0, width, height, 'grid').setOrigin(0).setScrollFactor(0).setDepth(-10);
 
+    // 氛围余烬：缓缓上飘的光尘（ADD 发光，星空纵深感）
+    this.embers = [];
+    if (PARTICLE_SCALE >= 0.3) {
+      for (let i = 0; i < 14; i++) {
+        const p = this.add.image(Math.random() * width, Math.random() * height, 'particle')
+          .setTint(0x7dd3fc).setAlpha(Phaser.Math.FloatBetween(0.08, 0.22))
+          .setScale(Phaser.Math.FloatBetween(0.25, 0.6))
+          .setBlendMode(Phaser.BlendModes.ADD).setScrollFactor(0).setDepth(-7);
+        p.drift = Phaser.Math.FloatBetween(6, 18);
+        this.embers.push(p);
+      }
+    }
+
     // R22 漂浮数学符号氛围层
     this.symbols = [];
     const glyphs = ['π', 'Σ', '√', '%', '∞', '±', '≈', '÷', 'P(A)', 'x̄', 'S²', '|'];
@@ -174,6 +187,15 @@ export default class GameScene extends Phaser.Scene {
         s.x = Math.random() * this.scale.gameSize.width;
       }
     }
+    // 余烬上飘 + 微微左右摇曳
+    for (const p of this.embers) {
+      p.y -= (p.drift * delta) / 1000;
+      p.x += Math.sin((this.time.now + p.drift * 900) / 900) * 0.12;
+      if (p.y < -10) {
+        p.y = this.scale.gameSize.height + 10;
+        p.x = Math.random() * this.scale.gameSize.width;
+      }
+    }
   }
 
   onResize() {
@@ -195,6 +217,7 @@ export default class GameScene extends Phaser.Scene {
     // 角色进化系统字段（必须在下方 applyEvolution 之前初始化）
     this._evoTier = 0;
     this._evoRing = null;
+    this._evoRays = null;
     this._evoOrbs = [];
     this._evoSparkles = null;
     this._growProxy = null;
@@ -299,6 +322,16 @@ export default class GameScene extends Phaser.Scene {
       this._evoRing = null;
     }
 
+    // 星光光辐（档位 ≥3）：身后缓旋的放射光芒，气场全开
+    const wantRays = tier >= 3;
+    if (wantRays && !this._evoRays) {
+      this._evoRays = this.add.image(0, 0, 'rays')
+        .setTint(this.skinTint).setAlpha(0.14).setDepth(3);
+    } else if (!wantRays && this._evoRays) {
+      this._evoRays.destroy();
+      this._evoRays = null;
+    }
+
     // 环绕星豆：档位 3/4/5/6 → 1/2/3/4 颗
     const orbCount = tier >= 3 ? Math.min(4, tier - 2) : 0;
     while (this._evoOrbs.length < orbCount) {
@@ -335,7 +368,22 @@ export default class GameScene extends Phaser.Scene {
       this.showFloat(this.player.x, this.player.y - 60, `✦ 进化成【${names[tier]}】啦！`, '#fbbf24', 20);
       sfx.levelup();
       this.goldBurst();
-      // 进化瞬间的高亮脉冲
+      // 进化仪式：白闪 + 双层金色冲击环 + 光辐爆发
+      this.cameras.main.flash(160, 255, 240, 180);
+      for (const [rr, delay] of [[60, 0], [110, 90]]) {
+        const ring = this.add.circle(this.player.x, this.player.y, 12, 0xfbbf24, 0)
+          .setStrokeStyle(3, 0xfbbf24, 0.85).setDepth(8);
+        this.tweens.add({
+          targets: ring, radius: rr * (0.8 + this.playerBaseScale * 0.6), alpha: 0,
+          delay, duration: 520, ease: 'Cubic.Out', onComplete: () => ring.destroy(),
+        });
+      }
+      const burst = this.add.image(this.player.x, this.player.y, 'rays')
+        .setTint(0xfbbf24).setAlpha(0.7).setDepth(7).setScale(0.3);
+      this.tweens.add({
+        targets: burst, scale: 1.6 * this.playerBaseScale, alpha: 0, rotation: Math.PI / 3,
+        duration: 620, ease: 'Cubic.Out', onComplete: () => burst.destroy(),
+      });
       this._evoPulseUntil = this.time.now + 700;
       import('../systems/voice.js').then((m) => m.voice.speak(`进化啦！变成${names[tier]}！`));
       this.ach('evolve', 1);
@@ -504,9 +552,13 @@ export default class GameScene extends Phaser.Scene {
     e.spin = UPRIGHT[kind] ? 0 : Phaser.Math.FloatBetween(-80, 80);
     e.baseScale = 1;
     e.phase = Math.random() * Math.PI * 2;
-    // R11 传送入场动画（缩放+淡入）
+    // R11 传送入场动画（缩放+淡入）+ 白色传送光环
     e.setAlpha(0);
     this.tweens.add({ targets: e, alpha: 1, scale: { from: 0.2, to: 1 }, duration: 280, ease: 'Back.Out' });
+    if (PARTICLE_SCALE >= 0.3) {
+      const ring = this.add.circle(x, y, 6, 0xffffff, 0).setStrokeStyle(2, 0xffffff, 0.7).setDepth(4);
+      this.tweens.add({ targets: ring, radius: 26, alpha: 0, duration: 300, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
+    }
     return e;
   }
 
@@ -532,8 +584,13 @@ export default class GameScene extends Phaser.Scene {
     boss.enraged = false;
     boss.kb = new Phaser.Math.Vector2();
     boss.spin = 30;
-    // R10 周身旋转光环
-    boss.aura = this.add.image(x, y, 'joy-base').setTint(0xa855f7).setScale(2.6).setAlpha(0.4).setDepth(3);
+    // 周身旋转紫色光辐（压迫感拉满）
+    boss.aura = this.add.image(x, y, 'rays').setTint(0xa855f7).setScale(1.6).setAlpha(0.4).setDepth(3);
+    // 登场双重冲击环（紫→红）
+    for (const [rr, delay, c] of [[150, 0, 0xa855f7], [230, 170, 0xef4444]]) {
+      const ring = this.add.circle(x, y, 20, c, 0).setStrokeStyle(4, c, 0.9).setDepth(8);
+      this.tweens.add({ targets: ring, radius: rr, alpha: 0, delay, duration: 620, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
+    }
     this.boss = boss;
     this.bossTimer = 25000;
     sfx.boss();
@@ -961,6 +1018,22 @@ export default class GameScene extends Phaser.Scene {
     burst.explode();
     this.time.delayedCall(900, () => burst.destroy());
 
+    // 精英/Boss 死亡：第二层白金碎片（高速长命，爆裂更壮观）
+    if (enemy.isElite || enemy.isBoss) {
+      const shards = this.add.particles(enemy.x, enemy.y, 'particle', {
+        quantity: enemy.isBoss ? 26 : Math.round(14 * PARTICLE_SCALE),
+        speed: { min: 160, max: enemy.isBoss ? 460 : 330 },
+        lifespan: { min: 400, max: 1000 },
+        scale: { start: 0.9, end: 0 },
+        alpha: { start: 1, end: 0 },
+        tint: [0xffffff, 0xfbbf24],
+        blendMode: Phaser.BlendModes.ADD, emitting: false,
+      });
+      shards.setDepth(7);
+      shards.explode();
+      this.time.delayedCall(1100, () => shards.destroy());
+    }
+
     for (let i = 0; i < enemy.xpValue; i++) {
       this.spawnGem(enemy.x + Phaser.Math.Between(-8, 8), enemy.y + Phaser.Math.Between(-8, 8));
     }
@@ -1068,6 +1141,7 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 0.35;
     this.playerState.invincibleUntil = Math.max(this.playerState.invincibleUntil, this.time.now + 900);
     sfx.levelup();
+    this.cameras.main.flash(120, 255, 236, 170); // 升级轻闪
     this.zoomPunch(1.05, 300);
     this.goldBurst();
 
@@ -1552,6 +1626,31 @@ export default class GameScene extends Phaser.Scene {
     this.goldBurst();
     this.showFloat(this.player.x, this.player.y - 80, '🏆 生存胜利！进入无尽模式', '#fbbf24', 24);
     this.showFloat(this.player.x, this.player.y - 30, '敌潮将持续增强，看你能撑多久', '#e2e8f0', 15);
+    // 胜利烟花：四波彩色爆发（轮换配色）+ 轻震屏
+    const palette = [0xfbbf24, 0x22d3ee, 0xf472b6, 0x4ade80];
+    for (let i = 0; i < 4; i++) {
+      this.time.delayedCall(i * 380, () => {
+        if (this.playerState.dead) return;
+        const cam = this.cameras.main;
+        const view = cam.worldView;
+        const fx = this.add.particles(
+          view.x + view.width * (0.25 + 0.5 * Math.random()),
+          view.y + view.height * (0.25 + 0.5 * Math.random()),
+          'particle', {
+            quantity: Math.round(26 * PARTICLE_SCALE),
+            speed: { min: 90, max: 300 },
+            lifespan: { min: 400, max: 900 },
+            scale: { start: 1, end: 0 },
+            tint: palette[i % palette.length],
+            blendMode: Phaser.BlendModes.ADD, emitting: false,
+          });
+        fx.setDepth(12);
+        fx.explode();
+        this.time.delayedCall(950, () => fx.destroy());
+        this.cameras.main.shake(120, 0.008);
+        sfx.gem();
+      });
+    }
   }
 
   togglePause() {
@@ -1585,6 +1684,9 @@ export default class GameScene extends Phaser.Scene {
     this.dashDir.set(moveVec.x || this.dashDir.x, moveVec.y || this.dashDir.y).normalize();
     this.dashUntil = this.time.now + 190;
     this.dashCd = 3000 * (ps.dashCdMul || 1); // 足：冷却缩减
+    // 冲刺起步环
+    const ring = this.add.circle(this.player.x, this.player.y, 10, 0x22d3ee, 0).setStrokeStyle(2, 0x22d3ee, 0.8).setDepth(6);
+    this.tweens.add({ targets: ring, radius: 42, alpha: 0, duration: 260, ease: 'Cubic.Out', onComplete: () => ring.destroy() });
     sfx.gem();
     return true;
   }
@@ -1857,6 +1959,13 @@ export default class GameScene extends Phaser.Scene {
         orb.setPosition(this.player.x + Math.cos(a) * 36 * this.playerBaseScale, this.player.y + Math.sin(a) * 36 * this.playerBaseScale);
         orb.setScale(0.42 * Math.min(2.2, this.playerBaseScale));
       });
+    }
+    // 星光光辐跟随：缓旋 + 呼吸明暗（高档更亮）
+    if (this._evoRays) {
+      this._evoRays.setPosition(this.player.x, this.player.y);
+      this._evoRays.rotation += delta / 2600;
+      this._evoRays.setScale(this.playerBaseScale * 1.15);
+      this._evoRays.setAlpha((this._evoTier >= 5 ? 0.2 : 0.14) + 0.05 * Math.sin(this.time.now / 400));
     }
 
     const invincible = this.time.now < ps.invincibleUntil;

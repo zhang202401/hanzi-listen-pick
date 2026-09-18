@@ -14,8 +14,10 @@ export function buildPlaceholderTextures(scene) {
   glowCircle(scene, 'bullet', 14, 0xffffff);
   glowCircle(scene, 'particle', 8, 0xffffff); // 白底，运行时 tint 上色
 
-  // 玩家：青色发光核
-  glowCircle(scene, 'player', 40, COLORS.player, 0.22);
+  // 玩家：星核造型（白色分层，运行时按皮肤染色）：辉光层 + 光环 + 十字星芒 + 白热核心
+  starCoreTexture(scene, 'player', 40);
+  // 仪式/气场用光芒放射（12 道光辐，白色，运行时 tint 上色）
+  raysTexture(scene, 'rays', 256, 12);
 
   // 敌人：三种几何形（占位）+ 分裂兵（品红圆）+ 分裂后的小兵
   polygon(scene, 'enemy1', 30, 3, COLORS.enemy1); // 三角 追踪杂兵
@@ -98,6 +100,8 @@ function mechaTexture(scene, key, w, h, color) {
   g.fillTriangle(w * 0.92, h * 0.32, w * 0.7, h * 0.04, w * 0.64, h * 0.3);
   g.fillStyle(color, 0.95); // 头部
   g.fillRoundedRect(w * 0.16, h * 0.2, w * 0.68, h * 0.52, 6);
+  g.lineStyle(2, 0xffffff, 0.55); // 白描边
+  g.strokeRoundedRect(w * 0.16, h * 0.2, w * 0.68, h * 0.52, 6);
   g.fillStyle(0x0b1222, 0.9); // 下颚
   g.fillRoundedRect(w * 0.16, h * 0.68, w * 0.68, h * 0.16, 3);
   g.fillStyle(0xffffff, 0.95); // 独眼横条
@@ -121,6 +125,14 @@ function planeTexture(scene, key, w, h, color) {
     { x: w * 0.18, y: h * 0.62 },
     { x: w * 0.55, y: h * 0.67 },
   ], true);
+  g.lineStyle(1.5, 0xffffff, 0.55); // 白描边
+  g.strokePoints([
+    { x: w - 2, y: h * 0.5 },
+    { x: w * 0.55, y: h * 0.33 },
+    { x: w * 0.18, y: h * 0.38 },
+    { x: w * 0.18, y: h * 0.62 },
+    { x: w * 0.55, y: h * 0.67 },
+  ], true, true);
   g.fillStyle(0xffffff, 0.9); // 座舱
   g.fillCircle(w * 0.74, h * 0.5, 2.6);
   g.generateTexture(key, w, h);
@@ -138,6 +150,8 @@ function bunnyTexture(scene, key, w, h, color) {
   g.fillEllipse(w * 0.7, h * 0.28, w * 0.09, h * 0.32);
   g.fillStyle(color, 0.97); // 头
   g.fillCircle(w / 2, h * 0.66, w * 0.34);
+  g.lineStyle(2, 0xffffff, 0.5); // 白描边
+  g.strokeCircle(w / 2, h * 0.66, w * 0.34 - 1);
   g.fillStyle(0x0b1222, 0.9); // 眼睛
   g.fillCircle(w * 0.4, h * 0.6, 2);
   g.fillCircle(w * 0.6, h * 0.6, 2);
@@ -174,6 +188,8 @@ function turtleTexture(scene, key, w, h, color) {
   g.fillEllipse(w * 0.86, h * 0.5, w * 0.2, h * 0.32);
   g.fillStyle(color, 0.97); // 壳
   g.fillEllipse(w * 0.46, h * 0.5, w * 0.62, h * 0.9);
+  g.lineStyle(2, 0xffffff, 0.5); // 壳描边
+  g.strokeEllipse(w * 0.46, h * 0.5, w * 0.62, h * 0.9);
   g.fillStyle(0x0b1222, 0.4); // 壳纹
   g.fillEllipse(w * 0.46, h * 0.5, w * 0.34, h * 0.5);
   g.fillStyle(0xffffff, 0.6); // 眼
@@ -329,19 +345,70 @@ function glowCircle(scene, key, size, color, edgeAlpha = 0.16) {
   g.destroy();
 }
 
-/** 正多边形贴图（三角形/菱形/六边形敌人） */
+/** 正多边形贴图（几何敌兵）：色块 + 白描边 + 内嵌暗纹 + 白热核心，更有"设计感" */
 function polygon(scene, key, size, sides, color) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
   const r = size / 2;
-  const pts = [];
-  for (let i = 0; i < sides; i++) {
-    const a = (Math.PI * 2 * i) / sides - Math.PI / 2;
-    pts.push(new Phaser.Math.Vector2(r + r * Math.cos(a), r + r * Math.sin(a)));
-  }
+  const ptsOf = (rr, rot) => {
+    const pts = [];
+    for (let i = 0; i < sides; i++) {
+      const a = (Math.PI * 2 * i) / sides - Math.PI / 2 + (rot || 0);
+      pts.push(new Phaser.Math.Vector2(r + rr * Math.cos(a), r + rr * Math.sin(a)));
+    }
+    return pts;
+  };
   g.fillStyle(color, 0.95);
-  g.fillPoints(pts, true);
-  g.lineStyle(2, 0xffffff, 0.5);
-  g.strokePoints(pts, true, true);
+  g.fillPoints(ptsOf(r), true);
+  g.lineStyle(2, 0xffffff, 0.55);
+  g.strokePoints(ptsOf(r - 1), true, true);
+  g.fillStyle(0x000000, 0.24); // 内嵌暗纹（同形内缩，层次感）
+  g.fillPoints(ptsOf(r * 0.58, Math.PI / sides), true);
+  g.fillStyle(0xffffff, 0.9); // 白热核心
+  g.fillCircle(r, r, Math.max(2.5, r * 0.16));
+  g.generateTexture(key, size, size);
+  g.destroy();
+}
+
+/** 星芒核心（玩家）：多层辉光 + 光环 + 十字星芒 + 白热中心；白色分层便于皮肤染色 */
+function starCoreTexture(scene, key, size) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const r = size / 2;
+  for (let i = 6; i >= 1; i--) {
+    const rr = (r * i) / 6;
+    g.fillStyle(0xffffff, Math.min(0.14 + (1 - i / 6) * 0.55, 1));
+    g.fillCircle(r, r, rr);
+  }
+  g.lineStyle(2, 0xffffff, 0.85); // 光环
+  g.strokeCircle(r, r, r * 0.58);
+  g.fillStyle(0xffffff, 0.9); // 十字星芒（两枚细长菱形）
+  g.fillPoints([
+    new Phaser.Math.Vector2(r, 2), new Phaser.Math.Vector2(r + 3.5, r), new Phaser.Math.Vector2(r, size - 2), new Phaser.Math.Vector2(r - 3.5, r),
+  ], true);
+  g.fillPoints([
+    new Phaser.Math.Vector2(2, r), new Phaser.Math.Vector2(r, r - 3.5), new Phaser.Math.Vector2(size - 2, r), new Phaser.Math.Vector2(r, r + 3.5),
+  ], true);
+  g.fillStyle(0xffffff, 1); // 白热中心
+  g.fillCircle(r, r, r * 0.26);
+  g.generateTexture(key, size, size);
+  g.destroy();
+}
+
+/** 光芒放射（仪式/气场）：n 道细长光辐，白色，运行时 tint + 旋转 */
+function raysTexture(scene, key, size, spokes) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const r = size / 2;
+  for (let i = 0; i < spokes; i++) {
+    const a = (Math.PI * 2 * i) / spokes;
+    const a1 = a - Math.PI / spokes * 0.32;
+    const a2 = a + Math.PI / spokes * 0.32;
+    const long = i % 2 === 0 ? r - 4 : r * 0.66;
+    g.fillStyle(0xffffff, i % 2 === 0 ? 0.5 : 0.3);
+    g.fillPoints([
+      new Phaser.Math.Vector2(r + Math.cos(a1) * r * 0.16, r + Math.sin(a1) * r * 0.16),
+      new Phaser.Math.Vector2(r + Math.cos(a) * long, r + Math.sin(a) * long),
+      new Phaser.Math.Vector2(r + Math.cos(a2) * r * 0.16, r + Math.sin(a2) * r * 0.16),
+    ], true);
+  }
   g.generateTexture(key, size, size);
   g.destroy();
 }
