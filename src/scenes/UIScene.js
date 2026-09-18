@@ -20,6 +20,13 @@ export default class UIScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale.gameSize;
     const pad = 14;
+    // 场景重启复位浮层引用：旧容器已随 shutdown 销毁，残留真值引用会
+    // 让"选卡期间禁暂停"与卡死看门狗误判（以为界面还开着）
+    this.levelUpUI = null;
+    this.pauseOverlay = null;
+    this._cardMic = null;
+    this._cardHeard = null;
+    this._cardKeyBinds = [];
     // R19 安全区：触屏设备（刘海屏）HUD 整体下移
     this.topPad = IS_TOUCH ? 22 : 0;
     const top = 7 + this.topPad;
@@ -212,6 +219,8 @@ export default class UIScene extends Phaser.Scene {
   togglePauseOverlay() {
     const game = this.scene.get('Game');
     if (!game || !game.playerState || game.playerState.dead) return;
+    // 升级选卡期间禁止暂停：暂停/恢复会与选卡的冻结/恢复互相错位导致假死
+    if (this.levelUpUI) return;
 
     if (this.pauseOverlay) {
       // 恢复

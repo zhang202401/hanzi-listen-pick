@@ -46,7 +46,7 @@ export default class TitleScene extends Phaser.Scene {
     if (this.title.postFX) this.title.postFX.addGlow(0xfbbf24, 6, 0, false);
 
     this.add
-      .text(cx, cy - 44, '听一听 · 喊一喊 · 认汉字', {
+      .text(cx, cy - 44, '听一听 · 点一点 · 认汉字', {
         fontFamily: FONT,
         fontSize: '24px',
         color: COLORS.uiDim,

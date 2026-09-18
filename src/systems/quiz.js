@@ -92,25 +92,30 @@ export function showQuiz(q, onDone) {
     sound.style.display = 'none';
     list.querySelectorAll('button').forEach((b) => (b.disabled = true));
 
-    const expTitle = document.createElement('div');
-    const expBody = document.createElement('div');
-    expBody.className = 'quiz-exp';
+    // 教学反馈全程 try/catch：任何异常都不得阻止"继续战斗"按钮出现，否则升级流程卡死
+    try {
+      const expTitle = document.createElement('div');
+      const expBody = document.createElement('div');
+      expBody.className = 'quiz-exp';
 
-    if (isCorrect) {
-      expTitle.className = 'quiz-exp-title good';
-      expTitle.textContent = `🎉 答对啦！这是【${q.char}】`;
-      expBody.innerHTML = `<b class="hanzi-big">${q.char}</b>（${q.pinyin}）· ${q.word} · ${q.hint}`;
-      voice.speak(`答对啦！这是${q.char}，${q.word}的${q.char}。`);
-    } else {
-      expTitle.className = 'quiz-exp-title bad';
-      expTitle.textContent = `💪 没关系，再记一遍`;
-      expBody.innerHTML = `<b class="hanzi-big">${q.char}</b>（${q.pinyin}）· ${q.word} · ${q.hint}`;
-      voice.speak(`正确答案是${q.char}，${q.word}的${q.char}。${q.hint}。`);
-      panel.classList.add('shake');
-      setTimeout(() => panel.classList.remove('shake'), 360);
+      if (isCorrect) {
+        expTitle.className = 'quiz-exp-title good';
+        expTitle.textContent = `🎉 答对啦！这是【${q.char}】`;
+        expBody.innerHTML = `<b class="hanzi-big">${q.char}</b>（${q.pinyin}）· ${q.word} · ${q.hint}`;
+        voice.speak(`答对啦！这是${q.char}，${q.word}的${q.char}。`);
+      } else {
+        expTitle.className = 'quiz-exp-title bad';
+        expTitle.textContent = `💪 没关系，再记一遍`;
+        expBody.innerHTML = `<b class="hanzi-big">${q.char}</b>（${q.pinyin}）· ${q.word} · ${q.hint}`;
+        voice.speak(`正确答案是${q.char}，${q.word}的${q.char}。${q.hint}。`);
+        panel.classList.add('shake');
+        setTimeout(() => panel.classList.remove('shake'), 360);
+      }
+      result.appendChild(expTitle);
+      result.appendChild(expBody);
+    } catch (e) {
+      console.error('quiz finish fx error', e);
     }
-    result.appendChild(expTitle);
-    result.appendChild(expBody);
 
     const cont = document.createElement('button');
     cont.className = 'quiz-continue';

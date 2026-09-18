@@ -52,6 +52,7 @@ export default class GameScene extends Phaser.Scene {
     this.novaTimer = 0;
     this.pendingLevelUps = 0;
     this.choosing = false;
+    this._stuckMs = 0; // 卡死看门狗计时
     this.restOverlayOpen = false; // 休息浮层状态随开局复位
     this._levelUpCount = 0; // 升级计数：驱动听音选字（每2次升级1次）的节奏
     this.bossFired = new Set();
@@ -195,6 +196,8 @@ export default class GameScene extends Phaser.Scene {
     this._evoTier = 0;
     this._evoRing = null;
     this._evoOrbs = [];
+    this._evoSparkles = null;
+    this._growProxy = null;
     this.playerBaseScale = 1;
 
     this.trail = this.add.particles(0, 0, 'particle', {
@@ -213,44 +216,84 @@ export default class GameScene extends Phaser.Scene {
     // 初始形态（1 档小圆豆，静默应用）
     this.playerBaseScale = 1;
     this.applyEvolution(1, true);
+    this.refreshPlayerSize(false);
 
     // 索敌锁定指示器：当前自动攻击目标（让"会开火"可见）
     this.lockon = this.add.circle(0, 0, 26, 0xffffff, 0).setStrokeStyle(2, 0xfbbf24, 0.9).setDepth(3).setVisible(false);
     this.lockonTarget = null;
   }
 
-  /** 等级 → 进化档位：1 小圆豆 / 2 光环小豆 / 3 星环小豆 / 4 超级大豆 */
+  /** 等级 → 体型成长系数：每升 1 级 +1.8%，45 级封顶（开局 1.0 → 满成长 1.8 倍大） */
+  growthForLevel(level) {
+    return 1 + Math.min(Math.max(0, level - 1), 45) * 0.018;
+  }
+
+  /** 等级 → 进化档位：5 级一档，外观越来越炫酷 */
   evoTierForLevel(level) {
-    if (level >= 30) return 4;
-    if (level >= 20) return 3;
-    if (level >= 10) return 2;
+    if (level >= 25) return 6;
+    if (level >= 20) return 5;
+    if (level >= 15) return 4;
+    if (level >= 10) return 3;
+    if (level >= 5) return 2;
     return 1;
   }
 
-  /** 应用进化档位：缩放、碰撞体、光环与环绕星豆的创建/销毁 */
-  applyEvolution(tier, silent) {
-    const base = 1 + (tier - 1) * 0.11;
-    this._evoTier = tier;
-    this.playerBaseScale = base;
-
+  /**
+   * 应用体型：碰撞体同步 + 目标缩放。
+   * animate=true 时用 Back.Out 弹性长大 + 金色冲击波（升级仪式感）。
+   * update() 每帧用 playerBaseScale 重算缩放，因此只需维护该系数。
+   */
+  refreshPlayerSize(animate) {
+    const target = this.growthForLevel(this.playerState.level);
     // 碰撞体同步缩放（贴图 40px，圆心居中：offset = 20 - r），封顶防难度失衡
-    const r = Math.min(PLAYER.RADIUS * base, 22);
+    const r = Math.min(PLAYER.RADIUS * target, 24);
     this.player.body.setCircle(r, 20 - r, 20 - r);
+
+    if (this._growProxy) this.tweens.killTweensOf(this._growProxy);
+    if (animate) {
+      const proxy = { s: this.playerBaseScale };
+      this._growProxy = proxy;
+      this.tweens.add({
+        targets: proxy,
+        s: target,
+        duration: 560,
+        ease: 'Back.Out',
+        onUpdate: () => { this.playerBaseScale = proxy.s; },
+        onComplete: () => {
+          this.playerBaseScale = target;
+          if (this._growProxy === proxy) this._growProxy = null;
+        },
+      });
+      // 升级长大冲击波：金色扩散环
+      const ring = this.add.circle(this.player.x, this.player.y, 14, 0xfbbf24, 0)
+        .setStrokeStyle(3, 0xfbbf24, 0.9).setDepth(8);
+      this.tweens.add({
+        targets: ring, radius: 56 + 46 * target, alpha: 0,
+        duration: 500, ease: 'Cubic.Out', onComplete: () => ring.destroy(),
+      });
+    } else {
+      this.playerBaseScale = target;
+    }
+  }
+
+  /**
+   * 应用进化档位（外观层）：光环 → 环绕星豆 → 光环脉冲 → 金色微粒 → 彩虹流光。
+   * 体型大小由 refreshPlayerSize 按等级处理，这里只管"炫酷"。
+   */
+  applyEvolution(tier, silent) {
+    this._evoTier = tier;
 
     // 光环层（档位 ≥2）
     if (tier >= 2 && !this._evoRing) {
       this._evoRing = this.add.image(0, 0, 'joy-base')
-        .setTint(this.skinTint).setAlpha(0.35).setDepth(4).setScale(base * 0.62);
-    } else if (this._evoRing) {
-      this._evoRing.setScale(base * 0.62).setAlpha(tier >= 2 ? 0.35 : 0);
-      if (tier < 2) {
-        this._evoRing.destroy();
-        this._evoRing = null;
-      }
+        .setTint(this.skinTint).setAlpha(0.35).setDepth(4);
+    } else if (tier < 2 && this._evoRing) {
+      this._evoRing.destroy();
+      this._evoRing = null;
     }
 
-    // 环绕星豆（档位 3 → 1 颗，档位 4 → 2 颗）
-    const orbCount = tier >= 4 ? 2 : tier >= 3 ? 1 : 0;
+    // 环绕星豆：档位 3/4/5/6 → 1/2/3/4 颗
+    const orbCount = tier >= 3 ? Math.min(4, tier - 2) : 0;
     while (this._evoOrbs.length < orbCount) {
       const orb = this.add.image(0, 0, 'joy-stick')
         .setTint(this.skinTint).setAlpha(0.9).setDepth(4).setScale(0.42);
@@ -260,11 +303,33 @@ export default class GameScene extends Phaser.Scene {
       this._evoOrbs.pop().destroy();
     }
 
+    // 金色微粒光环（档位 ≥5，性能模式降级跳过）
+    const wantSparkles = tier >= 5 && PARTICLE_SCALE >= 0.3;
+    if (wantSparkles && !this._evoSparkles) {
+      this._evoSparkles = this.add.particles(0, 0, 'particle', {
+        follow: this.player,
+        frequency: 230,
+        quantity: 1,
+        lifespan: 620,
+        speed: { min: 22, max: 62 },
+        scale: { start: 0.55, end: 0 },
+        alpha: { start: 0.85, end: 0 },
+        tint: 0xfbbf24,
+        blendMode: Phaser.BlendModes.ADD,
+      });
+      this._evoSparkles.setDepth(4);
+    } else if (!wantSparkles && this._evoSparkles) {
+      this._evoSparkles.destroy();
+      this._evoSparkles = null;
+    }
+
     if (!silent) {
-      const names = { 1: '小圆豆', 2: '光环小豆', 3: '星环小豆', 4: '超级大豆' };
+      const names = { 1: '小圆豆', 2: '光环小豆', 3: '星环小豆', 4: '双星小豆', 5: '炫光小豆', 6: '彩虹超级豆' };
       this.showFloat(this.player.x, this.player.y - 60, `✦ 进化成【${names[tier]}】啦！`, '#fbbf24', 20);
       sfx.levelup();
       this.goldBurst();
+      // 进化瞬间的高亮脉冲
+      this._evoPulseUntil = this.time.now + 700;
       import('../systems/voice.js').then((m) => m.voice.speak(`进化啦！变成${names[tier]}！`));
       this.ach('evolve', 1);
     }
@@ -966,10 +1031,12 @@ export default class GameScene extends Phaser.Scene {
   gainXP(v) {
     const ps = this.playerState;
     ps.xp += v * (ps.xpMul || 1); // R12 经验加权被动
-    while (ps.xp >= ps.xpNeed) {
+    // guard 防御：xpNeed 因任何原因变成 0/负数时 while 会永久空转卡死页面
+    let guard = 0;
+    while (ps.xp >= ps.xpNeed && guard++ < 60) {
       ps.xp -= ps.xpNeed;
       ps.level += 1;
-      ps.xpNeed = Math.round(XP.baseNeed * Math.pow(XP.growth, ps.level - 1));
+      ps.xpNeed = Math.max(1, Math.round(XP.baseNeed * Math.pow(XP.growth, ps.level - 1)));
       this.ach('level', ps.level);
       this.pendingLevelUps += 1;
     }
@@ -980,6 +1047,7 @@ export default class GameScene extends Phaser.Scene {
   openLevelUp() {
     this._levelUpCount += 1;
     this.choosing = true;
+    this.refreshPlayerSize(true); // 每次升级体型成长动画（变大 + 冲击波）
     // R12 升级慢动作：时间凝固前先体验 0.5 秒子弹时间
     this.physics.world.timeScale = 3;
     this.tweens.timeScale = 0.35;
@@ -993,17 +1061,26 @@ export default class GameScene extends Phaser.Scene {
       this.tweens.timeScale = 1;
       this.physics.world.pause();
 
+    /** 选卡流程收尾：恢复战斗 / 续接下一次升级（onPick 与异常兜底共用） */
+    const finishLevelUp = () => {
+      this.choosing = false;
+      this.pendingLevelUps -= 1;
+      if (!this.paused) this.physics.world.resume();
+      if (this.pendingLevelUps > 0) this.openLevelUp();
+    };
+
     const doCards = () => {
-      const ui = this.scene.get('UIScene');
-      const cards = ui.buildLevelUpCards(this.playerState);
-      cards.forEach((card) => {
-        card.__apply = () => {
-          card.apply(this.playerState);
-          this.playerState.skillLevels[card.id] = (this.playerState.skillLevels[card.id] || 0) + 1;
-        };
-      });
-      // 升级选卡全部点选（无喊字环节）
-      ui.showLevelUp(cards, (chosen) => {
+      try {
+        const ui = this.scene.get('UIScene');
+        const cards = ui.buildLevelUpCards(this.playerState);
+        cards.forEach((card) => {
+          card.__apply = () => {
+            card.apply(this.playerState);
+            this.playerState.skillLevels[card.id] = (this.playerState.skillLevels[card.id] || 0) + 1;
+          };
+        });
+        // 升级选卡全部点选（无喊字环节）
+        ui.showLevelUp(cards, (chosen) => {
         try {
           // 朗读确认：卡上的字 + 讲解，加深听音印象
           voice.speak(`${chosen.char}！${chosen.lesson ? chosen.lesson : ''}`);
@@ -1017,12 +1094,15 @@ export default class GameScene extends Phaser.Scene {
           }
         } finally {
           // 无论选卡逻辑是否抛异常，都必须恢复战斗，否则世界永久冻结
-          this.choosing = false;
-          this.pendingLevelUps -= 1;
-          this.physics.world.resume();
-          if (this.pendingLevelUps > 0) this.openLevelUp();
+          finishLevelUp();
         }
-      });
+        });
+      } catch (e) {
+        // 建卡/展示异常也不得卡死：跳过选卡直接继续战斗
+        console.error('levelup cards error, skip cards', e);
+        this.showFloat(this.player.x, this.player.y - 70, '升级！', '#fbbf24', 22);
+        finishLevelUp();
+      }
     };
 
     try {
@@ -1030,23 +1110,28 @@ export default class GameScene extends Phaser.Scene {
       if (this._levelUpCount % 2 === 0) {
         const q = pickQuizChar(this.playerState.level);
         const onDone = (correct, qRec) => {
-          recordCharAnswer(qRec.char, correct, this.playerState.level);
-          this.session.total += 1;
-          this.ach('quiz_total', this.session.total);
-          this.ach('quiz_ok', this.session.correct);
-          if (correct) {
-            this.session.correct += 1;
-            this.session.streak = (this.session.streak || 0) + 1;
-            // 连对加成：每连对 3 题，伤害 +5%
-            if (this.session.streak % 3 === 0) {
-              this.playerState.bonusDmg = Math.min(1.8, this.playerState.bonusDmg + 0.05);
-              this.showFloat(this.player.x, this.player.y - 100, `连对 ${this.session.streak} 题！威力提升`, '#4ade80', 16);
+          // 答题结算里任何一步抛异常（存档/成就等）都不得阻断选卡，否则世界冻结卡死
+          try {
+            recordCharAnswer(qRec.char, correct, this.playerState.level);
+            this.session.total += 1;
+            this.ach('quiz_total', this.session.total);
+            this.ach('quiz_ok', this.session.correct);
+            if (correct) {
+              this.session.correct += 1;
+              this.session.streak = (this.session.streak || 0) + 1;
+              // 连对加成：每连对 3 题，伤害 +5%
+              if (this.session.streak % 3 === 0) {
+                this.playerState.bonusDmg = Math.min(1.8, this.playerState.bonusDmg + 0.05);
+                this.showFloat(this.player.x, this.player.y - 100, `连对 ${this.session.streak} 题！威力提升`, '#4ade80', 16);
+              }
+              this.playerState.bonusDmg = Math.min(1.8, this.playerState.bonusDmg * 1.1);
+              this.session.answers.push({ char: q.char, correct: true });
+            } else {
+              this.session.streak = 0;
+              this.session.answers.push({ char: q.char, correct: false });
             }
-            this.playerState.bonusDmg = Math.min(1.8, this.playerState.bonusDmg * 1.1);
-            this.session.answers.push({ char: q.char, correct: true });
-          } else {
-            this.session.streak = 0;
-            this.session.answers.push({ char: q.char, correct: false });
+          } catch (e) {
+            console.error('quiz onDone error, continue to cards', e);
           }
           doCards();
         };
@@ -1448,7 +1533,8 @@ export default class GameScene extends Phaser.Scene {
     if (this.paused) {
       this.physics.world.pause();
       this.joystickVecZero();
-    } else {
+    } else if (!this.choosing) {
+      // 升级选卡期间世界必须保持冻结，由选卡流程负责恢复
       this.physics.world.resume();
     }
     return this.paused;
@@ -1616,6 +1702,37 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
+    // ---------- 卡死看门狗 ----------
+    // 升级流程会把物理世界冻结；若后续任何一环异常导致既没有选卡界面、
+    // 也没有答题浮层，游戏将永久定格。此处持续检测该状态，超时强制恢复。
+    const ovEl = document.getElementById('overlay');
+    const overlayOpen = !!(ovEl && ovEl.style.display !== 'none');
+    const uiScene = this.scene.get('UIScene');
+    const cardsOpen = !!(uiScene && uiScene.levelUpUI);
+    if (this.choosing && !ps.dead && !cardsOpen && !overlayOpen) {
+      this._stuckMs += delta;
+      if (this._stuckMs > 3500) {
+        console.error('watchdog: levelup flow stuck, force resume');
+        if (uiScene && uiScene.levelUpUI) {
+          uiScene.levelUpUI.destroy();
+          uiScene.levelUpUI = null;
+        }
+        this.choosing = false;
+        this.pendingLevelUps = 0;
+        this._stuckMs = 0;
+        this.physics.world.isPaused = false;
+        this.physics.world.resume();
+        this.physics.world.timeScale = 1;
+        this.tweens.timeScale = 1;
+        this.showFloat(this.player.x, this.player.y - 80, '✚ 已自动恢复', '#4ade80', 16);
+      }
+    } else if (!this.paused && !ps.dead && !this.choosing && !overlayOpen && this.physics.world.isPaused) {
+      // 状态错位兜底：不在任何暂停/选卡流程，世界却被冻着 → 立即解冻
+      this.physics.world.resume();
+    } else {
+      this._stuckMs = 0;
+    }
+
     if (!ps.dead) this.elapsedMs += delta;
 
     this.gridFollow();
@@ -1680,24 +1797,37 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // 角色进化：等级跨档时应用新形态（体型/光环/星豆）
+    // 角色进化：等级跨档时应用新形态（光环/星豆/流光随档位升级）
     const tier = this.evoTierForLevel(ps.level);
     if (tier !== this._evoTier) this.applyEvolution(tier, false);
 
-    // 呼吸脉动（替代旧 tween：与进化基础缩放叠加）
-    const pulse = 1 + 0.05 * Math.sin(this.time.now / 500);
+    // 呼吸脉动（与成长缩放叠加）；进化后 0.7 秒内额外高亮鼓胀一下
+    const evoPulse = this.time.now < (this._evoPulseUntil || 0)
+      ? 0.14 * Math.sin((Math.min(1, ((this._evoPulseUntil - this.time.now) / 700))) * Math.PI)
+      : 0;
+    const pulse = 1 + 0.05 * Math.sin(this.time.now / 500) + evoPulse;
     this.player.setScale(this.playerBaseScale * pulse);
 
-    // 进化层跟随：光环随体缩放微旋，星豆环绕
+    // 进化层跟随：光环随体缩放旋转（高档转更快），4 档起呼吸闪烁，6 档彩虹流光
     if (this._evoRing) {
       this._evoRing.setPosition(this.player.x, this.player.y);
-      this._evoRing.rotation += delta / 900;
-      this._evoRing.setScale(this.playerBaseScale * 0.62);
+      this._evoRing.rotation += delta / (this._evoTier >= 4 ? 520 : 900);
+      this._evoRing.setScale(this.playerBaseScale * (0.62 + evoPulse * 1.6));
+      if (this._evoTier >= 6) {
+        const h = (this.time.now / 2800) % 1;
+        this._evoRing.setTint(Phaser.Display.Color.HSLToColor(h, 0.85, 0.6).color);
+        this._evoRing.setAlpha(0.45);
+      } else if (this._evoTier >= 4) {
+        this._evoRing.setAlpha(0.3 + 0.14 * Math.sin(this.time.now / 280));
+      } else {
+        this._evoRing.setAlpha(0.35);
+      }
     }
     if (this._evoOrbs.length) {
       this._evoOrbs.forEach((orb, i) => {
         const a = this.time.now / 650 + (Math.PI * 2 * i) / this._evoOrbs.length;
         orb.setPosition(this.player.x + Math.cos(a) * 36 * this.playerBaseScale, this.player.y + Math.sin(a) * 36 * this.playerBaseScale);
+        orb.setScale(0.42 * Math.min(1.5, this.playerBaseScale));
       });
     }
 
